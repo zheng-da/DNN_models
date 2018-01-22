@@ -8,6 +8,10 @@ import sys
 import logging
 import time
 import math
+import gc
+import copy
+from autoencoder import AutoEncoderModel
+from autoencoder import weight_names, bias_names
 from autoencoder import AutoEncoderModel
 from autoencoder import weight_names, bias_names
 
@@ -56,7 +60,6 @@ def extend_params(params, new_data, new_hidden, new_outputs, rand_init=False):
     new_inputs = new_data.shape[1]
     max_cols, max_idx = get_densest_idx(new_data, old_inputs)
     
-    
     num_inputs = new_data.shape[1]
     if (rand_init):
         init = True
@@ -99,10 +102,34 @@ def get_densest2(spm, num1, num2):
     sp_data2 = spm[:,np.logical_and(colsum >= max_cols2, colsum < max_cols1)]
     return sp_data1, sp_data2
 
+def proj_back_params(params, Vh):
+    weight = params.get(weight_names[1])
+    weight = mx.ndarray.dot(mx.ndarray.array(Vh.T), weight)
+    bias = params.get(bias_names[1])
+    params_cpy = copy.copy(params)
+    params_cpy.update({weight_names[1]: weight})
+    params_cpy.update({bias_names[1]: mx.ndarray.dot(mx.ndarray.array(Vh.T), bias)})
+    return params_cpy
+
+def proj_params(params, Vh):
+    weight = params.get(weight_names[1])
+    bias = params.get(bias_names[1])
+    params_cpy = copy.copy(params)
+    params_cpy.update({weight_names[1]: mx.ndarray.dot(mx.ndarray.array(Vh), weight)})
+    params_cpy.update({bias_names[1]: mx.ndarray.dot(mx.ndarray.array(Vh), bias)})
+    return params_cpy
+
 def train_cl(spm, target_ndims, target_red_ndims, num_epoc, init_ndims=40,
              init_red_ndims=20, num_incs = 10, iact='relu', learning_rate=0.8,
              lr_inc=2, approx_loss=False, use_sparse=False):
     learning_rate = float(learning_rate)
+    spm = get_densest(spm, target_ndims)
+    target_ndims = spm.shape[1]
+    orig_model = AutoEncoderModel(mx.ndarray.sparse.csr_matrix(spm), spm,
+                                  num_dims=target_red_ndims, internal_act=iact,
+                                  learning_rate=learning_rate, batch_size=2000,
+                                  use_sparse=use_sparse)
+
     ndims = init_ndims
     red_ndims = init_red_ndims
     ndims_inc_exp = math.pow((float(target_ndims)/init_ndims), 1/float(num_incs))
@@ -123,8 +150,6 @@ def train_cl(spm, target_ndims, target_red_ndims, num_epoc, init_ndims=40,
     model = AutoEncoderModel(data, y, num_dims=red_ndims, internal_act=iact,
                              learning_rate=learning_rate, batch_size=2000, use_sparse=use_sparse)
     params, _, errors = model.train(data, y, num_epoc=num_epoc, return_err=True)
-    params_seq = [params]
-    errors_seq = [errors]
 
     prev_Vh = None
     for i in range(num_incs):
@@ -160,17 +185,10 @@ def train_cl(spm, target_ndims, target_red_ndims, num_epoc, init_ndims=40,
             weight = params.get(weight_names[0])
             params.update({weight_names[0]: weight.T})
         if (prev_Vh is not None):
-            weight = params.get(weight_names[1])
-            weight = mx.ndarray.dot(mx.ndarray.array(prev_Vh.T), weight)
-            params.update({weight_names[1]: weight})
-            bias = params.get(bias_names[1])
-            params.update({bias_names[1]: mx.ndarray.dot(mx.ndarray.array(prev_Vh.T), bias)})
+            params = proj_back_params(params, prev_Vh)
         params_init = extend_params(params, sp_data, red_ndims, data.shape[1], rand_init=True)
         if (Vh is not None):
-            weight = params_init.get(weight_names[1])
-            params_init.update({weight_names[1]: mx.ndarray.dot(mx.ndarray.array(Vh), weight)})
-            bias = params_init.get(bias_names[1])
-            params_init.update({bias_names[1]: mx.ndarray.dot(mx.ndarray.array(Vh), bias)})
+            params_init = proj_params(params_init, Vh)
             prev_Vh = Vh
         if (use_sparse):
             weight = params_init.get(weight_names[0])
@@ -180,8 +198,6 @@ def train_cl(spm, target_ndims, target_red_ndims, num_epoc, init_ndims=40,
                                  batch_size=2000, proj=Vh, use_sparse=use_sparse)
         params, _, errors = model.train(data, y, num_epoc=num_epoc, return_err=True,
                                         params=params_init)
-        params_seq.append(params)
-        errors_seq.append(errors)
         # If the learning rate wasn't reduced during the training, we can increase
         # the learning rate for the next larger model.
         if (learning_rate == model.learning_rate):
@@ -190,6 +206,13 @@ def train_cl(spm, target_ndims, target_red_ndims, num_epoc, init_ndims=40,
         
         _, _, tot_loss = model.numpy_cal(params)
         print("The error: " + str(tot_loss))
+        orig_params = params
+        if (Vh is not None):
+            orig_params = proj_back_params(params, Vh)
+        orig_params = extend_params(orig_params, spm, target_red_ndims, target_ndims, rand_init=True)
+        _, _, orig_loss = orig_model.numpy_cal(orig_params)
+        print("The original error: " + str(orig_loss))
         print("")
+        gc.collect()
 
     return model
