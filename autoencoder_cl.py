@@ -10,6 +10,7 @@ import time
 import math
 import gc
 import copy
+import matplotlib.pyplot as plt
 from autoencoder import AutoEncoderModel
 from autoencoder import weight_names, bias_names
 from autoencoder import AutoEncoderModel
@@ -33,7 +34,7 @@ def extend_params_encode(weight, bias, idx, num_inputs, num_outputs, init):
         out_weight = init
     else:
         # We initialize the weights in the same way as MXNet
-        out_weight = np.random.uniform(low=-0.1, high=0.1, size=(num_outputs, num_inputs))
+        out_weight = np.random.uniform(low=-0.001, high=0.001, size=(num_outputs, num_inputs))
     out_bias = np.zeros(num_outputs)
     out_weight[0:weight.shape[0], idx] = weight.asnumpy()
     out_bias[0:bias.shape[0]] = bias.asnumpy()
@@ -46,7 +47,7 @@ def extend_params_decode(weight, bias, idx, num_inputs, num_outputs, init):
         out_weight = init
     else:
         # We initialize the weights in the same way as MXNet
-        out_weight = np.random.uniform(low=-0.1, high=0.1, size=(num_outputs, num_inputs))
+        out_weight = np.random.uniform(low=-0.001, high=0.001, size=(num_outputs, num_inputs))
     out_bias = np.zeros(num_outputs)
     out_weight[idx, 0:weight.shape[1]] = weight.asnumpy()
     out_bias[idx] = bias.asnumpy()
@@ -119,6 +120,12 @@ def proj_params(params, Vh):
     params_cpy.update({bias_names[1]: mx.ndarray.dot(mx.ndarray.array(Vh), bias)})
     return params_cpy
 
+def plot_errors(x, y):
+    plt.plot(x, y)
+    plt.ylabel('error')
+    plt.xlabel('seconds')
+    plt.show()
+
 def train_cl(spm, target_ndims, target_red_ndims, num_epoc, init_ndims=40,
              init_red_ndims=20, num_incs = 10, iact='relu', learning_rate=0.8,
              lr_inc=2, approx_loss=False, use_sparse=False):
@@ -150,7 +157,8 @@ def train_cl(spm, target_ndims, target_red_ndims, num_epoc, init_ndims=40,
     model = AutoEncoderModel(data, y, num_dims=red_ndims, internal_act=iact,
                              learning_rate=learning_rate, batch_size=2000, use_sparse=use_sparse)
     params, _, errors = model.train(data, y, num_epoc=num_epoc, return_err=True)
-
+    plot_xs = []
+    plot_ys = []
     prev_Vh = None
     for i in range(num_incs):
         ndims = int(ndims * ndims_inc_exp)
@@ -161,7 +169,6 @@ def train_cl(spm, target_ndims, target_red_ndims, num_epoc, init_ndims=40,
         U, s, Vh = sp.sparse.linalg.svds(sp_data, k=red_ndims)
         res = np.dot(sp_data.dot(Vh.T), Vh)
         print("svd error: " + str(np.sum(np.square(res - sp_data))))
-        print("")
 
         start = time.time()
         data = mx.ndarray.sparse.csr_matrix(sp_data)
@@ -169,12 +176,10 @@ def train_cl(spm, target_ndims, target_red_ndims, num_epoc, init_ndims=40,
         if (approx_loss and red_ndims * 1.5 < sp_data.shape[1]):
             _, _, Vh = sp.sparse.linalg.svds(sp_data, k=int(red_ndims * 1.5))
             y = mx.ndarray.dot(data, mx.ndarray.array(Vh.T))
-            print("Approximate loss with " + str(y.shape[1]) + " dims")
         else:
             y = data
         
         # We use the previously trained model to initialize the current model.
-        print("Train from previous results")
         # If we use sparse operations, we need to flip the weight matrix in the first layer
         # because the following operations (projection and parameter extension)
         # always assume the first dimension of the weight is for the hidden layer
@@ -202,8 +207,8 @@ def train_cl(spm, target_ndims, target_red_ndims, num_epoc, init_ndims=40,
         # the learning rate for the next larger model.
         if (learning_rate == model.learning_rate):
             learning_rate = learning_rate * lr_inc
-        print("It takes " + str(time.time() - start) + " seconds")
-        
+        duration = time.time() - start
+        print("It takes " + str(duration) + " seconds")
         _, _, tot_loss = model.numpy_cal(params)
         print("The error: " + str(tot_loss))
         orig_params = params
@@ -213,6 +218,9 @@ def train_cl(spm, target_ndims, target_red_ndims, num_epoc, init_ndims=40,
         _, _, orig_loss = orig_model.numpy_cal(orig_params)
         print("The original error: " + str(orig_loss))
         print("")
+        plot_xs.append(int(duration))
+        plot_ys.append(orig_loss)
         gc.collect()
 
+    plot_errors(plot_xs, plot_ys)
     return model

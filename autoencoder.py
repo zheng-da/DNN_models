@@ -88,7 +88,6 @@ class AutoEncoderModel:
                  batch_size=50, loss_name="L2", proj=None, use_sparse=False):
         dims = [data.shape[1], num_dims, y.shape[1]]
         if (use_sparse):
-            print("Use sparse operators")
             CreateSyms = SparseSyms
             FC = SparseFC
             NumpyFC = SparseNumpyFC
@@ -107,11 +106,9 @@ class AutoEncoderModel:
         x = FC(data=self.data, weight=self.fc1_weight, bias=self.fc1_bias, num_hidden=dims[1])
         if (internal_act is not None):
             x = mx.symbol.Activation(data=x, act_type=internal_act)
-            print("Internal activation: " + internal_act)
         self.layer1 = x
         x = DenseFC(data=x, weight=self.fc2_weight, bias=self.fc2_bias, num_hidden=dims[2])
         self.layer2 = x
-        print("loss func: " + loss_name)
         np_loss, mx_loss = get_loss(loss_name)
         # TODO How about using L1/L2 regularization.
         self.loss = mx_loss(x, self.y)
@@ -142,8 +139,6 @@ class AutoEncoderModel:
         data_iter = mx.io.NDArrayIter(data={'data':data}, label={'label':y},
                 batch_size=batch_size, shuffle=True,
                 last_batch_handle='discard')
-        print("Learning rate: " + str(learning_rate))
-        print("batch size: " + str(batch_size))
         # allocate memory given the input data and label shapes
         self.model.bind(data_shapes=data_iter.provide_data, label_shapes=data_iter.provide_label)
         # initialize parameters by uniform random numbers
@@ -157,7 +152,6 @@ class AutoEncoderModel:
         if (params is not None):
             self.model.set_params(arg_params=params, aux_params=None, force_init=True)
         if (reinit_opt):
-            print("reinit optimizer. New learning rate: " + str(learning_rate))
             self.model.init_optimizer(optimizer='sgd',
                                       optimizer_params={'learning_rate': learning_rate,
                                                         'momentum': 0.9}, force_init=True)
@@ -172,7 +166,6 @@ class AutoEncoderModel:
             self.model.update()                            # update parameters
 
     def train(self, data, y, num_epoc, params = None, debug=False, return_err=False, plot=False):
-        print("internal #epochs: " + str(num_epoc))
         prev_val = None
         reinit_opt = True
         plot_xs = []
