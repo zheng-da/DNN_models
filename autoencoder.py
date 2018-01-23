@@ -112,10 +112,13 @@ class AutoEncoderModel:
         np_loss, mx_loss = get_loss(loss_name)
         # TODO How about using L1/L2 regularization.
         self.loss = mx_loss(x, self.y)
-        self.model = mx.mod.Module(symbol=self.loss, data_names=['data'], label_names = ['label'])
+        model = mx.mod.Module(symbol=self.loss, data_names=['data'], label_names = ['label'])
+        self.model = model
         self.init_data(data, y, batch_size, learning_rate)
         
-        def cal_model_numpy(params):
+        def cal_model_numpy(params = None):
+            if (params is None):
+                params = model.get_params()[0]
             fc1_weight = params.get(weight_names[0]).asnumpy()
             fc1_bias = params.get(bias_names[0]).asnumpy()
             fc2_weight = params.get(weight_names[1]).asnumpy()

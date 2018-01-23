@@ -132,7 +132,8 @@ def train_cl(spm, target_ndims, target_red_ndims, num_epoc, init_ndims=40,
     learning_rate = float(learning_rate)
     spm = get_densest(spm, target_ndims)
     target_ndims = spm.shape[1]
-    orig_model = AutoEncoderModel(mx.ndarray.sparse.csr_matrix(spm), spm,
+    orig_model = AutoEncoderModel(mx.ndarray.sparse.csr_matrix(spm),
+                                  mx.ndarray.sparse.csr_matrix(spm),
                                   num_dims=target_red_ndims, internal_act=iact,
                                   learning_rate=learning_rate, batch_size=2000,
                                   use_sparse=use_sparse)
